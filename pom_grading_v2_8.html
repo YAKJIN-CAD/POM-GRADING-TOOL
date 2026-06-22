@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POM 그레이딩 편차표 생성기 v2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --ink: #1a1f1e;
+  --paper: #f5f3ee;
+  --rule: #c8c2b6;
+  --accent: #1a5276;
+  --base-bg: #d4e6f1;
+  --base-ink: #1a3a4a;
+  --neg: #c0392b;
+  --pos: #1a5276;
+  --muted: #888;
+  --panel: #fffefb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--paper); color: var(--ink); padding: 24px 20px 80px; font-size: 14px; }
+.wrap { max-width: 1100px; margin: 0 auto; }
+
+.header { border-bottom: 2px solid var(--ink); padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.eyebrow { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+h1 { font-size: 22px; font-weight: 700; }
+.header-right { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.6; }
+
+.panel { background: var(--panel); border: 1px solid var(--rule); padding: 16px 18px; margin-bottom: 14px; }
+.panel-title { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+
+.how-to { background: #eaf2fb; border: 1px solid #aed6f1; padding: 12px 16px; font-size: 12px; line-height: 1.8; margin-bottom: 14px; }
+.how-to strong { color: var(--accent); }
+.how-to ol { margin-left: 16px; }
+
+.paste-area {
+  width: 100%; min-height: 140px; font-family: 'Courier New', monospace; font-size: 12px;
+  padding: 10px; border: 1.5px solid var(--rule); background: #fff; color: var(--ink);
+  resize: vertical; line-height: 1.5;
+}
+.paste-area:focus { outline: 2px solid var(--accent); }
+
+.controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.field input[type="text"] { font-family: 'Courier New', monospace; font-size: 13px; padding: 7px 10px; border: 1px solid var(--rule); background: #fff; width: 100%; }
+.field input:focus { outline: 2px solid var(--accent); }
+
+.btn { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 9px 20px; border: 1.5px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; transition: .12s; white-space: nowrap; }
+.btn:hover { background: var(--accent); border-color: var(--accent); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.outline { background: transparent; color: var(--ink); }
+.btn.outline:hover { background: var(--ink); color: #fff; }
+
+.status { font-size: 12px; padding: 7px 11px; border-left: 3px solid var(--rule); color: var(--muted); background: #f9f8f5; margin-top: 10px; display: none; }
+.status.on { display: block; }
+.status.ok { border-left-color: #27ae60; color: #1e8449; }
+.status.err { border-left-color: var(--neg); color: var(--neg); }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 12px; width: 100%; min-width: 500px; }
+thead th { background: var(--ink); color: #fff; font-size: 11px; font-weight: 700; padding: 7px 9px; text-align: center; border: 1px solid #000; white-space: nowrap; }
+thead th.tl { text-align: left; }
+thead th.base { background: var(--base-ink); }
+thead th.tol { background: #2c3e50; }
+tbody tr.spec td { border: 1px solid var(--rule); padding: 5px 8px; vertical-align: middle; }
+tbody tr.delta td { border: 1px solid var(--rule); border-top: none; padding: 3px 8px 5px; font-family: 'Courier New', monospace; font-size: 11px; background: #fafaf8; }
+tbody tr.spec:hover td, tbody tr.spec:hover + tr.delta td { background: #f0ede6; }
+td.code { font-family: 'Courier New', monospace; font-weight: 700; font-size: 11px; white-space: nowrap; }
+td.desc { white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+td.tol { text-align: center; font-family: 'Courier New', monospace; font-size: 11px; color: var(--muted); }
+td.sz { text-align: center; font-family: 'Courier New', monospace; }
+td.base-cell { background: var(--base-bg) !important; font-weight: 700; color: var(--base-ink); text-align: center; font-family: 'Courier New', monospace; }
+.dn { color: var(--neg); font-weight: 600; }
+.up { color: var(--pos); font-weight: 600; }
+.zr { color: var(--muted); }
+
+.action-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.result-meta { font-size: 12px; color: var(--muted); }
+.empty { text-align: center; padding: 36px 20px; color: var(--muted); font-size: 13px; border: 1px dashed var(--rule); background: #fafaf8; }
+.empty .ico { font-size: 30px; margin-bottom: 8px; }
+
+.tag { display: inline-block; background: var(--base-bg); color: var(--base-ink); font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px; border-radius: 2px; vertical-align: middle; }
+@media print {
+  body { background: #fff; padding: 10px; font-size: 9pt; }
+  .header, .how-to, .panel:not(:last-child) { display: none; }
+  .panel:last-child { border: none; padding: 0; }
+  .panel-title { display: none; }
+  .action-bar { display: none !important; }
+  .wrap { max-width: 100%; }
+  table { font-size: 9pt; width: 100%; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+  thead th { background: #1a1f1e !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  thead th.base { background: #1a3a4a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  thead th.tol { background: #2c3e50 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  td.base-cell { background: #d4e6f1 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tbody tr.delta td { background: #fafaf8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .dn { color: #c0392b !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .up { color: #1a5276 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .tag { background: #d4e6f1 !important; color: #1a3a4a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-title { display: block !important; font-size: 13pt; font-weight: bold; margin-bottom: 10px; font-family: Arial; }
+}
+.print-title { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="header">
+  <div>
+    <div class="eyebrow">약진통상 CAD/TD부</div>
+    <h1>POM 그레이딩 편차표 생성기</h1>
+  </div>
+  <div class="header-right">Base Size 기준 · 스펙 + 편차 2행 표시<br>엑셀/PDF에서 복사 → 붙여넣기 → 다운로드</div>
+</div>
+
+<!-- How to -->
+<div class="how-to">
+  <strong>사용법</strong>
+  <ol>
+    <li>Tech Spec(PDF 또는 엑셀)에서 POM 표를 <strong>마우스로 드래그 → Ctrl+C</strong> 복사</li>
+    <li>아래 입력란에 <strong>Ctrl+V</strong> 붙여넣기</li>
+    <li>Base Size 확인 후 <strong>"편차표 생성"</strong> 클릭</li>
+    <li>결과 확인 후 <strong>엑셀 다운로드</strong></li>
+  </ol>
+  <div style="margin-top:6px; color:#555;">
+    💡 <strong>P/S, TOL, 사이즈 헤더 행이 포함되어도 자동으로 처리됩니다.</strong>
+    POM 코드(A300, A412H 등)가 있는 행만 변환됩니다.
+  </div>
+</div>
+
+<!-- Step 1 -->
+<div class="panel">
+  <div class="panel-title">1 — POM 표 붙여넣기</div>
+  <textarea class="paste-area" id="pasteArea" placeholder="여기에 Tech Spec POM 표를 붙여넣으세요 (Ctrl+V)&#10;&#10;예시:&#10;P/S  POM Code  POM Description          TOL(-)  TOL(+)  2      6      10     14     18     20&#10;P    A400H     WAIST@TOP EDGE-RLXD      -1/2    1/2     14 1/4 15 1/4 16 1/4 17 3/4 19 1/2 20 1/2&#10;P    A412H     LOW HIP #&quot; FM TOP EDGE   -1/2    1/2     16 1/2 17 1/2 18 1/2 20     21 3/4 22 3/4"></textarea>
+
+  <div class="controls">
+    <div class="field" style="min-width:90px;">
+      <label>Base Size</label>
+      <input type="text" id="baseSize" value="10" placeholder="10">
+    </div>
+    <div class="field" style="flex:2; min-width:200px;">
+      <label>사이즈 목록 (비우면 자동 감지)</label>
+      <input type="text" id="sizeList" placeholder="예: 2, 6, 10, 14, 18, 20">
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="btn" onclick="generate()">편차표 생성</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="btn outline" onclick="resetAll()">🗑 초기화</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="btn outline" onclick="loadExample()">예시 데이터</button>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<!-- Step 2: Result -->
+<div class="panel">
+  <div class="panel-title">2 — 결과 편차표</div>
+  <div class="action-bar" id="actionBar" style="display:none;">
+    <button class="btn outline" onclick="printTable()">🖨️ 인쇄 / PDF 저장</button>
+    <span class="result-meta" id="resultMeta"></span>
+  </div>
+  <div class="print-title" id="printTitle"></div>
+  <div id="resultArea">
+    <div class="empty"><div class="ico">📐</div>붙여넣기 후 "편차표 생성"을 누르세요</div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ── Example data ────────────────────────────────────────────────────────
+const EXAMPLE = `P/S\tPOM Code\tPOM Description\tTOL (-)\tTOL (+)\t2\t6\t10\t14\t18\t20
+P\tA400H\t*WAIST@TOP EDGE-RLXD 1/2 MEAS\t-1/2\t1/2\t14 1/4\t15 1/4\t16 1/4\t17 3/4\t19 1/2\t20 1/2
+P\tA400H\tWAIST@SEAM-RLXD-1/2 MEAS\t-1/4\t1/4\t14 3/4\t15 3/4\t16 3/4\t18 1/4\t20\t21
+P\tA401H\tWAIST@TOP EDGE-EXTD-1/2 MEAS\t0\t1\t18\t19\t20\t21 1/2\t23 1/4\t24 1/4
+\tA404 NG\tWAISTBAND HEIGHT<2 1/2"\t-1/8\t1/8\t1 3/4\t1 3/4\t1 3/4\t1 3/4\t1 3/4\t1 3/4
+P\tA411\tLOW HIP PLCMT FROM TOP EDGE\t0\t0\t5 3/4\t5 3/4\t6 1/4\t6 3/4\t6 3/4\t6 3/4
+P\tA412H\tLOW HIP #" FM TOP EDGE-1/2 MEAS\t-1/2\t1/2\t16 1/2\t17 1/2\t18 1/2\t20\t21 3/4\t22 3/4
+P\tA425H\tTHIGH@1" BLW CROTCH PT-1/2 MEAS\t-1/4\t1/4\t10\t10 3/4\t11 1/2\t12 1/2\t13 3/4\t14 3/8
+\tA430X\tKNEE PLCMT FM CROTCH PT - REG\t0\t0\t12\t12\t12\t12\t12\t12
+\tA430H\tKNEE #" FM CROTCH POINT-1/2 MEAS\t-1/4\t1/4\t7 7/8\t8 1/4\t8 5/8\t9 1/8\t9 5/8\t9 7/8
+P\tA438H-08BF\tLEG OPENING RLXD-BOOT/FLARE 1/2 MEAS\t-1/4\t1/4\t9 1/4\t9 5/8\t10\t10 1/2\t11\t11 1/4
+P\tA500-9P-NG\tINSEAM-FULL LENGTH-NG REG\t-1/2\t1/2\t30\t30\t30\t30\t30\t30
+P\tA450\t*FRT RISE TO TOP EDGE\t-1/4\t1/4\t9\t9 1/2\t10\t10 3/4\t11 1/2\t11 7/8
+P\tA460\tBK RISE TO TOP EDGE\t-1/4\t1/4\t14\t14 1/2\t15\t15 3/4\t16 1/2\t16 7/8
+\tA576F\tDART FM CB\t-1/4\t1/4\t3 1/8\t3 3/8\t3 5/8\t4\t4 3/8\t4 5/8
+\tA577A\tVENT/SLIT WIDTH\t-1/8\t1/8\t1 1/2\t1 1/2\t1 1/2\t1 1/2\t1 1/2\t1 1/2
+\tA577 NG\tVENT/SLIT HEIGHT NG\t-1/8\t1/8\t8 1/2\t8 1/2\t8 1/2\t8 1/2\t8 1/2\t8 1/2`;
+
+function loadExample() {
+  document.getElementById('pasteArea').value = EXAMPLE;
+  document.getElementById('sizeList').value = '2, 6, 10, 14, 18, 20';
+  showStatus('예시 데이터 로드됨. "편차표 생성"을 눌러보세요.', '');
+}
+
+// ── Fraction ────────────────────────────────────────────────────────────
+function parseFrac(s) {
+  if (!s && s !== 0) return null;
+  s = s.toString().trim().replace(/\s+/g, ' ');
+  if (!s || s === '-' || s.toUpperCase() === 'N/A') return null;
+  if (s === '0') return 0;
+  let sign = 1;
+  if (s.startsWith('-')) { sign = -1; s = s.slice(1).trim(); }
+  else if (s.startsWith('+')) s = s.slice(1).trim();
+  let total = 0;
+  s.split(' ').forEach(p => {
+    if (p.includes('/')) {
+      const [n, d] = p.split('/').map(Number);
+      if (!isNaN(n) && !isNaN(d) && d) total += n / d;
+    } else { const v = parseFloat(p); if (!isNaN(v)) total += v; }
+  });
+  return sign * total;
+}
+
+function toFrac(val, showSign = false) {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  const sign = val < 0 ? -1 : 1;
+  const e8 = Math.round(Math.abs(val) * 8);
+  const w = Math.floor(e8 / 8), rem = e8 % 8;
+  let frac = '';
+  if (rem) { const gcd = (a,b) => b ? gcd(b,a%b):a; const g=gcd(rem,8); frac=`${rem/g}/${8/g}`; }
+  let s = w ? (frac ? `${w} ${frac}` : `${w}`) : (frac || '0');
+  if (sign < 0 && s !== '0') s = '-' + s;
+  else if (showSign && sign > 0 && s !== '0') s = '+' + s;
+  return s;
+}
+
+// ── POM code detector ───────────────────────────────────────────────────
+// Strict: A300, A400H, A412H, A430X, A438H-08P, A438H-08BF, A500-9P, A500-9PNG
+// Max suffix after hyphen = 4 chars to avoid swallowing description words
+const POM_CODE_STRICT = /^[A-Z]\d{2,4}[A-Z0-9]*(-[A-Z0-9]{1,4})*$/i;
+const SKIP = ['P/S','POM','POMCODE','CODE','P','S','BRAND','FORM1','FORM2','MATERIAL','FISCAL','NG'];
+
+function isPOMCode(s) {
+  s = s.trim().toUpperCase();
+  if (SKIP.includes(s)) return false;
+  return POM_CODE_STRICT.test(s);
+}
+
+// Split a raw token that might be "A438H-06MCCALF" into code + desc start
+// e.g. "A438H-06MCCALF" → code="A438H-06MC", extra="CALF"
+function splitCodeFromToken(token) {
+  // Try progressively shorter prefixes until we find a valid POM code
+  for (let len = token.length; len >= 3; len--) {
+    const prefix = token.slice(0, len);
+    const suffix = token.slice(len);
+    if (isPOMCode(prefix) && suffix.length > 0 && /^[A-Z]/i.test(suffix)) {
+      return { code: prefix, extra: suffix };
+    }
+  }
+  if (isPOMCode(token)) return { code: token, extra: '' };
+  return null;
+}
+
+function isPOMCode(s) {
+  s = s.trim().toUpperCase();
+  if (SKIP.includes(s)) return false;
+  return POM_CODE_STRICT.test(s);
+}
+
+// ── Parse pasted text ───────────────────────────────────────────────────
+function parsePaste(text) {
+  const sizeListInput = document.getElementById('sizeList').value.trim();
+  const baseStr       = document.getElementById('baseSize').value.trim();
+
+  const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+
+  // ── Step 1: Pre-process — join continuation lines
+  // A POM continuation line has no POM code at start and no TOL pattern
+  const lines = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const l = rawLines[i];
+    const tokens = l.split(/\s+/);
+    // If line starts with P/S or POM code, it's a new row
+    const firstMeaningful = tokens.find(t => !['P','S',''].includes(t.toUpperCase()));
+    if (firstMeaningful && isPOMCode(firstMeaningful)) {
+      lines.push(l);
+    } else if (lines.length > 0 && /^[A-Z]/.test(l) && !isPOMCode(tokens[0])) {
+      // continuation of previous line (e.g. multi-line desc like A001-LA000-20)
+      // skip these
+    } else {
+      lines.push(l);
+    }
+  }
+
+  // ── Step 2: resolve sizes ──
+  let sizes = null;
+  if (sizeListInput) {
+    sizes = sizeListInput.split(',').map(s => s.trim()).filter(Boolean);
+  } else {
+    for (const line of lines) {
+      const tokens = line.split(/\s+/);
+      const nums = tokens.filter(t => /^\d{1,3}P?$/.test(t));
+      if (nums.length >= 4) { sizes = nums; break; }
+      const tabTokens = line.split('\t');
+      const tabNums = tabTokens.filter(t => /^\d{1,3}P?$/.test(t.trim()));
+      if (tabNums.length >= 4) { sizes = tabNums.map(s=>s.trim()); break; }
+    }
+  }
+  if (!sizes || !sizes.length) return { error: '사이즈 목록을 자동 감지하지 못했습니다.\n사이즈 목록 입력란에 직접 입력해주세요.\n예: 2, 6, 10, 14, 18, 20' };
+
+  const baseIdx = sizes.indexOf(baseStr);
+  if (baseIdx === -1) return { error: `Base Size "${baseStr}"를 [${sizes.join(', ')}]에서 찾을 수 없습니다.` };
+
+  const N = sizes.length;
+  const pomRows = [];
+
+  // ── Step 3: parse each line ──
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    const isTab = line.includes('\t');
+    let tokens;
+    if (isTab) {
+      tokens = line.split('\t').map(t => t.trim()).filter(t => t !== '');
+    } else {
+      tokens = line.split(/\s+/).filter(t => t !== '');
+    }
+    if (tokens.length < 2) {
+      // Single token line — might be a POM code whose values are on next line
+      if (tokens.length === 1 && isPOMCode(tokens[0]) && li + 1 < lines.length) {
+        const nextTokens = lines[li+1].split(/\s+/).filter(t => t !== '');
+        const combined = [tokens[0], ...nextTokens];
+        const parsed = parseSpaceLine(tokens[0], nextTokens, N, baseIdx);
+        if (parsed) { pomRows.push(parsed); li++; }
+      }
+      continue;
+    }
+
+    // Find POM code — check first 3 tokens, also handle fused "A438H-06MCCALF"
+    let codeIdx = -1;
+    let fusedExtra = '';
+    const searchLimit = Math.min(tokens.length, isTab ? 4 : 3);
+
+    for (let j = 0; j < searchLimit; j++) {
+      if (isPOMCode(tokens[j])) {
+        codeIdx = j; break;
+      }
+      // Try splitting fused token
+      const split = splitCodeFromToken(tokens[j]);
+      if (split) {
+        // Rebuild tokens with split code
+        tokens = [...tokens.slice(0, j), split.code, ...(split.extra ? [split.extra] : []), ...tokens.slice(j+1)];
+        codeIdx = j; break;
+      }
+    }
+    if (codeIdx === -1) continue;
+
+    // Handle "A404 NG" — merge NG into code
+    let code = tokens[codeIdx];
+    let restStart = codeIdx + 1;
+    if (restStart < tokens.length && tokens[restStart].toUpperCase() === 'NG') {
+      code = code + ' NG';
+      restStart++;
+    }
+
+    const rest = tokens.slice(restStart);
+
+    if (isTab) {
+      const parsed = tryExtract(code, rest, N, baseIdx);
+      if (parsed) pomRows.push(parsed);
+    } else {
+      const parsed = parseSpaceLine(code, rest, N, baseIdx);
+      if (parsed) pomRows.push(parsed);
+    }
+  }
+
+  if (!pomRows.length) return { error: 'POM 데이터를 찾지 못했습니다.\n\n가능한 원인:\n• 사이즈 목록이 맞지 않음\n• Base Size가 목록에 없음\n• "예시 데이터" 버튼으로 형식 확인 후 비교해보세요.' };
+  return { sizes, baseIdx, rows: pomRows };
+}
+
+// Parse a space-tokenized line after the POM code
+// Strategy: find TOL(-) TOL(+) pattern first, then take N values after it
+function parseSpaceLine(code, tokens, N, baseIdx) {
+  // Find TOL position: "-1/2 1/2", "0 0", "0 1", "-3/8 3/8" etc.
+  // TOL values are always <= 1 in absolute value
+  let tolN = '', tolP = '', tolEndIdx = -1;
+
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const a = tokens[i], b = tokens[i + 1];
+    const isNegOrZero = /^(-\d+\/\d+|-\d+|0)$/.test(a);
+    const isPosOrZero = /^(\d+\/\d+|\d+)$/.test(b);
+    if (isNegOrZero && isPosOrZero) {
+      const aVal = Math.abs(parseFrac(a) || 0);
+      const bVal = Math.abs(parseFrac(b) || 0);
+      if (aVal <= 1 && bVal <= 1) {
+        tolN = a; tolP = b; tolEndIdx = i + 1;
+        break;
+      }
+    }
+  }
+
+  // Collect N size values after TOL
+  const sizeStart = tolEndIdx + 1;
+  const sizeTokens = tokens.slice(sizeStart);
+
+  const vals = [];
+  let j = 0;
+  while (vals.length < N && j < sizeTokens.length) {
+    const t = sizeTokens[j];
+    // "X Y/Z" pattern
+    if (j + 1 < sizeTokens.length && /^\d+\/\d+$/.test(sizeTokens[j+1]) && /^\d+$/.test(t)) {
+      vals.push(`${t} ${sizeTokens[j+1]}`);
+      j += 2;
+    } else if (/^\d+$/.test(t) || /^\d+\/\d+$/.test(t)) {
+      vals.push(t);
+      j++;
+    } else {
+      break;
+    }
+  }
+
+  if (vals.length === 0) return null;
+
+  // Pad to N if sparse (e.g. A500-9P only has value at size 10)
+  while (vals.length < N) vals.push('0');
+
+  const values = vals.slice(0, N).map(parseFrac);
+
+  // For sparse rows (A003: "0 0 3/8 0 0"), replace 0s with null except meaningful ones
+  // Rule: if nonZero count > 0, keep nonZero values; replace 0s with null
+  // But if ALL values are 0 (e.g. header rows), skip
+  const nonZeroVals = values.filter(v => v !== null && v !== 0);
+  const baseVal = values[baseIdx];
+
+  if (baseVal === null) return null;
+  // All zeros = skip (header/label rows)
+  if (values.every(v => v === null || v === 0) && nonZeroVals.length === 0) return null;
+
+  // Sparse: replace 0 with null (but keep base as-is)
+  const finalValues = values.map((v, i) => {
+    if (i === baseIdx) return v;
+    if (v === 0 && nonZeroVals.length > 0) return null;
+    return v;
+  });
+
+  const desc = (tolEndIdx >= 0 ? tokens.slice(0, tolEndIdx - 1) : tokens).join(' ').trim();
+  return { code, desc, tolN, tolP, values: finalValues };
+}
+
+function tryExtract(code, rest, N, baseIdx) {
+  // Last N cells = size values
+  const sizeVals = rest.slice(rest.length - N);
+  const values = sizeVals.map(parseFrac);
+  if (values[baseIdx] === null) return null;
+  const nonNull = values.filter(v => v !== null).length;
+  if (nonNull < Math.ceil(N / 2)) return null;
+
+  // Before size values: possibly TOL(-) TOL(+) then desc
+  const before = rest.slice(0, rest.length - N);
+  let tolN = '', tolP = '', desc = '';
+
+  if (before.length >= 2) {
+    const mN = before[before.length - 2];
+    const mP = before[before.length - 1];
+    if (/^-?[\d\/]/.test(mN) && /^[\d\/]/.test(mP)) {
+      tolN = mN; tolP = mP;
+      desc = before.slice(0, before.length - 2).join(' ').trim();
+    } else {
+      desc = before.join(' ').trim();
+    }
+  } else {
+    desc = before.join(' ').trim();
+  }
+  return { code, desc, tolN, tolP, values };
+}
+
+// ── State ───────────────────────────────────────────────────────────────
+let lastData = null;
+
+// ── Generate ────────────────────────────────────────────────────────────
+function generate() {
+  const text = document.getElementById('pasteArea').value;
+  if (!text.trim()) { showStatus('붙여넣기 영역이 비어있습니다.', 'err'); return; }
+
+  const result = parsePaste(text);
+  if (result.error) { showStatus(result.error, 'err'); return; }
+
+  lastData = result;
+  renderTable();
+  document.getElementById('sizeList').value = result.sizes.join(', ');
+  showStatus(`${result.rows.length}개 POM 변환 완료  ·  Base: ${result.sizes[result.baseIdx]}  ·  사이즈: ${result.sizes.join(', ')}`, 'ok');
+  document.getElementById('actionBar').style.display = 'flex';
+  document.getElementById('resultMeta').textContent = `${result.rows.length}개 POM`;
+}
+
+// ── Render table ─────────────────────────────────────────────────────────
+function renderTable() {
+  const { sizes, baseIdx, rows } = lastData;
+  let html = '<div class="table-wrap"><table><thead><tr>';
+  html += '<th class="tl">POM Code</th><th class="tl">Description</th>';
+  html += '<th class="tol">TOL−</th><th class="tol">TOL+</th>';
+  sizes.forEach((sz, i) => {
+    html += `<th class="${i === baseIdx ? 'base' : ''}">${sz}${i === baseIdx ? ' <span class="tag">BASE</span>' : ''}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(r => {
+    const base = r.values[baseIdx];
+    // Spec row
+    html += '<tr class="spec">';
+    html += `<td class="code">${r.code}</td><td class="desc" title="${r.desc}">${r.desc}</td>`;
+    html += `<td class="tol">${r.tolN}</td><td class="tol">${r.tolP}</td>`;
+    r.values.forEach((v, i) => {
+      html += `<td class="${i === baseIdx ? 'base-cell' : 'sz'}">${v !== null ? toFrac(v) : '—'}</td>`;
+    });
+    html += '</tr>';
+    // Delta row
+    html += '<tr class="delta">';
+    html += `<td class="code"></td><td style="color:#bbb;font-style:italic;font-size:10px;">편차</td>`;
+    html += `<td></td><td></td>`;
+    r.values.forEach((v, i) => {
+      if (i === baseIdx) { html += `<td class="base-cell"></td>`; return; }
+      if (v === null || base === null) { html += `<td>—</td>`; return; }
+      const d = v - base;
+      const s = toFrac(d, true);
+      const cls = d < -0.001 ? 'dn' : d > 0.001 ? 'up' : 'zr';
+      html += `<td class="${cls}">${s}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('resultArea').innerHTML = html;
+}
+
+// ── Excel download ───────────────────────────────────────────────────────
+function downloadExcel() {
+  if (!lastData) return;
+  const { sizes, baseIdx, rows } = lastData;
+
+  const wb = XLSX.utils.book_new();
+  const ws = {};
+
+  // Colors
+  const C_INK     = 'FF1A1F1E';
+  const C_BASE_BG = 'FFD4E6F1';
+  const C_BASE_INK= 'FF1A3A4A';
+  const C_TOL_BG  = 'FF2C3E50';
+  const C_DELTA_BG= 'FFFAFAF8';
+  const C_NEG     = 'FFC0392B';
+  const C_POS     = 'FF1A5276';
+  const C_MUTED   = 'FF999999';
+  const C_WHITE   = 'FFFFFFFF';
+  const C_SPEC_BG = 'FFFFFFFE';
+
+  const thinBorder = { style: 'thin', color: { rgb: 'FFC8C2B6' } };
+  const border = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+  const borderNoTop = { bottom: thinBorder, left: thinBorder, right: thinBorder };
+
+  function cell(v, opts = {}) {
+    const c = { v, t: typeof v === 'number' ? 'n' : 's' };
+    const s = {
+      font: { name: opts.mono ? 'Courier New' : 'Arial', sz: opts.sz || 10, bold: !!opts.bold, italic: !!opts.italic, color: { rgb: opts.color || C_INK } },
+      fill: { patternType: 'solid', fgColor: { rgb: opts.bg || 'FFFFFFFE' } },
+      alignment: { horizontal: opts.align || 'center', vertical: 'center', wrapText: !!opts.wrap },
+      border: opts.noTop ? borderNoTop : border,
+    };
+    c.s = s;
+    return c;
+  }
+
+  const totalCols = 4 + sizes.length;
+  let r = 0;
+
+  // ── Title row ──
+  ws[XLSX.utils.encode_cell({ r, c: 0 })] = cell(
+    `그레이딩 편차표  —  Base Size: ${sizes[baseIdx]}  /  사이즈: ${sizes.join(', ')}`,
+    { bg: C_INK, color: C_WHITE, bold: true, sz: 12, align: 'left' }
+  );
+  for (let c = 1; c < totalCols; c++) {
+    ws[XLSX.utils.encode_cell({ r, c })] = cell('', { bg: C_INK });
+  }
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } }];
+  r++;
+
+  // ── Header row ──
+  const headers = ['POM Code', 'Description', 'TOL−', 'TOL+', ...sizes];
+  headers.forEach((h, c) => {
+    const isBase = c === baseIdx + 4;
+    const isTol  = c === 2 || c === 3;
+    ws[XLSX.utils.encode_cell({ r, c })] = cell(h, {
+      bg: isBase ? C_BASE_INK : isTol ? C_TOL_BG : C_INK,
+      color: C_WHITE, bold: true, sz: 10,
+      align: c <= 1 ? 'left' : 'center'
+    });
+  });
+  r++;
+
+  // ── Data rows ──
+  rows.forEach(row => {
+    const base = row.values[baseIdx];
+
+    // Spec row
+    const specVals = [row.code, row.desc, row.tolN || '', row.tolP || '', ...row.values.map(v => v !== null ? toFrac(v) : '—')];
+    specVals.forEach((v, c) => {
+      const isBase = c === baseIdx + 4;
+      const isTol  = c === 2 || c === 3;
+      ws[XLSX.utils.encode_cell({ r, c })] = cell(v, {
+        bg: isBase ? C_BASE_BG : C_SPEC_BG,
+        color: isBase ? C_BASE_INK : isTol ? C_MUTED : C_INK,
+        bold: isBase,
+        mono: c >= 2,
+        align: c <= 1 ? 'left' : 'center',
+        sz: isTol ? 9 : 10
+      });
+    });
+    r++;
+
+    // Delta row
+    const deltas = ['', '편차', '', '', ...row.values.map((v, i) => {
+      if (i === baseIdx || v === null || base === null) return '';
+      return toFrac(v - base, true);
+    })];
+    deltas.forEach((v, c) => {
+      const isBase  = c === baseIdx + 4;
+      const d       = c >= 4 && !isBase && v && v !== '' ? parseFrac(v.replace('+','')) * (v.startsWith('-') ? -1 : 1) : null;
+      const color   = v.startsWith && v.startsWith('-') ? C_NEG : v.startsWith && v.startsWith('+') ? C_POS : C_MUTED;
+      ws[XLSX.utils.encode_cell({ r, c })] = cell(v, {
+        bg: isBase ? C_BASE_BG : C_DELTA_BG,
+        color: c <= 1 ? C_MUTED : color,
+        italic: true, mono: true, sz: 9,
+        align: c <= 1 ? 'left' : 'center',
+        noTop: true
+      });
+    });
+    r++;
+  });
+
+  // ── Sheet range & col widths ──
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r - 1, c: totalCols - 1 } });
+  ws['!cols'] = [{ wch: 14 }, { wch: 40 }, { wch: 6 }, { wch: 6 }, ...sizes.map(() => ({ wch: 9 }))];
+  ws['!rows'] = [];
+  for (let i = 0; i < r; i++) {
+    ws['!rows'][i] = { hpt: i === 0 ? 20 : i === 1 ? 18 : i % 2 === 0 ? 14 : 11 };
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Grading Step');
+  XLSX.writeFile(wb, 'pom_grading_step.xlsx');
+}
+
+// ── CSV download ─────────────────────────────────────────────────────────
+function downloadCSV() {
+  if (!lastData) return;
+  const { sizes, baseIdx, rows } = lastData;
+  const lines = [['POM Code', 'Description', 'TOL-', 'TOL+', ...sizes].join(',')];
+  rows.forEach(r => {
+    const base = r.values[baseIdx];
+    lines.push([r.code, `"${r.desc}"`, r.tolN, r.tolP, ...r.values.map(v => v !== null ? toFrac(v) : '—')].join(','));
+    lines.push(['', '편차', '', '', ...r.values.map((v, i) => {
+      if (i === baseIdx || v === null || base === null) return '';
+      return toFrac(v - base, true);
+    })].join(','));
+  });
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'pom_grading_step.csv'; a.click();
+}
+
+function resetAll() {
+  document.getElementById('pasteArea').value = '';
+  document.getElementById('sizeList').value = '';
+  document.getElementById('baseSize').value = '10';
+  document.getElementById('status').className = 'status';
+  document.getElementById('actionBar').style.display = 'none';
+  document.getElementById('resultArea').innerHTML = '<div class="empty"><div class="ico">📐</div>붙여넣기 후 "편차표 생성"을 누르세요</div>';
+  document.getElementById('printTitle').textContent = '';
+  lastData = null;
+}
+
+// ── Print ─────────────────────────────────────────────────────────────
+function printTable() {
+  if (!lastData) return;
+  const { sizes, baseIdx } = lastData;
+  document.getElementById('printTitle').textContent =
+    `그레이딩 편차표  —  Base Size: ${sizes[baseIdx]}  /  사이즈: ${sizes.join(', ')}`;
+  window.print();
+}
+
+// ── Status ───────────────────────────────────────────────────────────────
+function showStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status on' + (type ? ' ' + type : '');
+}
+</script>
+</body>
+</html>
