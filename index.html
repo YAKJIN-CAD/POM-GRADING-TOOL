@@ -513,14 +513,27 @@ function renderTable() {
       html += `<td class="${i === baseIdx ? 'base-cell' : 'sz'}">${v !== null ? toFrac(v) : '—'}</td>`;
     });
     html += '</tr>';
-    // Delta row
+    // Delta row — adjacent size step (prev→current)
     html += '<tr class="delta">';
     html += `<td class="code"></td><td style="color:#bbb;font-style:italic;font-size:10px;">편차</td>`;
     html += `<td></td><td></td>`;
     r.values.forEach((v, i) => {
       if (i === baseIdx) { html += `<td class="base-cell"></td>`; return; }
-      if (v === null || base === null) { html += `<td>—</td>`; return; }
-      const d = v - base;
+      // Find nearest non-null neighbor toward base
+      let neighbor = null;
+      if (i < baseIdx) {
+        // left of base: compare with next size (toward base)
+        for (let j = i + 1; j <= baseIdx; j++) {
+          if (r.values[j] !== null) { neighbor = r.values[j]; break; }
+        }
+      } else {
+        // right of base: compare with previous size (toward base)
+        for (let j = i - 1; j >= baseIdx; j--) {
+          if (r.values[j] !== null) { neighbor = r.values[j]; break; }
+        }
+      }
+      if (v === null || neighbor === null) { html += `<td>—</td>`; return; }
+      const d = i < baseIdx ? v - neighbor : v - neighbor;
       const s = toFrac(d, true);
       const cls = d < -0.001 ? 'dn' : d > 0.001 ? 'up' : 'zr';
       html += `<td class="${cls}">${s}</td>`;
